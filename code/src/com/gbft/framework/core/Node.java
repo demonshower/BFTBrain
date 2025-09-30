@@ -1,5 +1,20 @@
 package com.gbft.framework.core;
 
+/**
+ * Node类 - BFT共识节点实现
+ * 
+ * 功能说明：
+ * 这个类实现了BFT系统中的共识节点，负责处理客户端请求并维护系统状态。
+ * 主要功能包括：
+ * 1. 执行客户端请求并更新状态机
+ * 2. 管理检查点机制，定期保存系统状态快照
+ * 3. 收集系统性能指标和运行特征
+ * 4. 与学习代理通信，发送性能数据
+ * 5. 接收协议切换决策并执行协议转换
+ * 
+ * 核心方法execute()负责按序执行请求，同时处理检查点和学习相关逻辑。
+ */
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

@@ -1,3 +1,25 @@
+"""
+学习代理 - BFT协议自适应选择模块
+
+功能说明：
+这个模块实现了基于机器学习的BFT协议自动选择功能。
+它接收系统运行时的性能特征数据，使用机器学习模型预测不同协议的性能表现，
+并选择最优协议发送给BFT节点。
+
+主要流程：
+1. 接收节点发送的性能特征数据（吞吐量、延迟、负载等）
+2. 使用训练好的机器学习模型预测各协议的性能
+3. 选择预测性能最优的协议并发送给节点
+4. 根据实际性能反馈更新训练数据和模型
+
+支持的学习模型：
+- QuadraticRF: 基于前一协议和当前协议的二次关系建模
+- MultiRF: 为每个协议训练独立的预测模型
+- SingleRF: 使用单一模型处理所有协议选择
+- ADAPT/ADAPT+: 适应性学习模型
+- Heuristic: 基于规则的启发式选择方法
+"""
+
 import gbft_pb2_grpc
 import gbft_pb2
 import logging
@@ -32,6 +54,7 @@ request_queue = queue.Queue()
 protocol_pool = ["pbft", "zyzzyva", "cheapbft", "sbft", "hotstuff", "prime"]
 
 
+# 对奖励值进行工程化处理，对低于1000的值进行非线性变换
 def reward_engineering(reward: float) -> float:
     if reward < 1000:
         return (reward / 1000) ** 2 * 1000
@@ -40,17 +63,20 @@ def reward_engineering(reward: float) -> float:
 
 class AgentCommServicer(gbft_pb2_grpc.AgentCommServicer):
 
+    # 接收BFT节点发送的性能特征数据并加入队列
     def send_data(self, request, context):
         request_queue.put(request)
 
         return gbft_pb2.google_dot_protobuf_dot_empty__pb2.Empty()
 
 
+# 计算回放缓冲区的有效长度，受限于配置的最大缓冲区大小
 def get_replay_buffer_length(experiences_y):
     if args.replay_buffer <= 0:
         return len(experiences_y)
     return min(args.replay_buffer, len(experiences_y))
 
+# 从检查点文件初始化二次模型的经验缓冲区
 def init_quadratic_experience_buffer(experiences_X, experiences_y):
     # read all csv files in the checkpoint folder in sequence according to their timestamp
     folder_path = "checkpoint/" 
@@ -66,6 +92,7 @@ def init_quadratic_experience_buffer(experiences_X, experiences_y):
             experiences_X[str.strip(previous_action)][str.strip(action)].extend([states[i, :] for i in range(states.shape[0])])
             experiences_y[str.strip(previous_action)][str.strip(action)].extend([reward_engineering(reward) for reward in rewards])
 
+# 从检查点文件初始化多模型的经验缓冲区
 def init_multi_experience_buffer(experiences_X, experiences_y):
     # read all csv files in the checkpoint folder in sequence according to their timestamp
     folder_path = "checkpoint/" 
@@ -97,6 +124,7 @@ def init_multi_experience_buffer(experiences_X, experiences_y):
                 experiences_X[str.strip(action)].extend([states[i, :] for i in range(states.shape[0])])
                 experiences_y[str.strip(action)].extend([reward_engineering(reward) for reward in rewards])
 
+# 从检查点文件初始化单模型的经验缓冲区
 def init_single_experience_buffer(experiences_X, experiences_y, actions_matrix):
     # read all csv files in the checkpoint folder in sequence according to their timestamp
     folder_path = "checkpoint/" 
@@ -120,6 +148,7 @@ def init_single_experience_buffer(experiences_X, experiences_y, actions_matrix):
         experiences_y.extend([reward_engineering(reward) for reward in rewards])
 
 
+# 从检查点文件初始化ADAPT模型的经验缓冲区，仅使用请求大小特征
 def init_adapt_experience_buffer(experiences_X, experiences_y, actions_matrix):
     # read all csv files in the checkpoint folder in sequence according to their timestamp
     folder_path = "checkpoint/" 
@@ -146,6 +175,7 @@ def init_adapt_experience_buffer(experiences_X, experiences_y, actions_matrix):
 
 class QuadraticRF:
     # 6 * 6 models and experience buckets: (prev_action, action)
+    # 初始化二次随机森林模型，为每个协议对创建独立的模型和经验缓冲区
     def __init__(self):
         self.experiences_X = {prev_action: {} for prev_action in protocol_pool}
         self.experiences_y = {prev_action: {} for prev_action in protocol_pool}
@@ -165,18 +195,22 @@ class QuadraticRF:
                 if len(self.experiences_y[prev_action][action]):
                     self.train(prev_action, action)
 
+    # 记录协议转换的奖励值到对应的经验缓冲区
     def record_reward(self, prev_action, action, reward):
         self.experiences_y[prev_action][action].append(reward_engineering(reward))
         self.last_updated_bucket = (prev_action, action)
         if (prev_action, action) in self.on_hold_buckets:
             del self.on_hold_buckets[(prev_action, action)]
 
+    # 记录状态和动作到经验缓冲区
     def record_state_and_action(self, current_protocol, best_protocol, state):
         self.experiences_X[current_protocol][best_protocol].append(state)
     
+    # 获取前一个状态数据
     def get_prev_state(self, prev_prev_action, prev_action):
         return self.experiences_X[prev_prev_action][prev_action][len(self.experiences_y[prev_prev_action][prev_action]) - 1].tolist()
     
+    # 训练指定协议对的随机森林模型
     def train(self, prev_action, action):
         replay_length = get_replay_buffer_length(self.experiences_y[prev_action][action])
         bootstrapped_idx = np.random.choice(replay_length, replay_length, replace=True)
@@ -221,6 +255,7 @@ class QuadraticRF:
 
 class MultiRF:
 
+    # 初始化多模型随机森林，为每个协议创建独立的模型
     def __init__(self):
         self.experiences_X = {}
         self.experiences_y = {}
@@ -238,10 +273,12 @@ class MultiRF:
                 self.train(model_name)
         
 
+    # 记录奖励值到对应协议的经验缓冲区
     def record_reward(self, prev_action, action, reward):
         self.experiences_y[action].append(reward_engineering(reward))
         self.last_updated_bucket = action
     
+    # 将状态转换为one-hot编码格式
     def onehot_state(self, state, current_protocol):
         # -2 because to exclude HAS_FAST_PATH and HAS_LEADER_ROTATION
         oh_state = np.zeros((state.shape[0] + len(protocol_pool) - 2))
@@ -249,12 +286,14 @@ class MultiRF:
         oh_state[state.shape[0] + protocol_pool.index(current_protocol) - 2] = 1
         return oh_state
     
+    # 记录状态和动作到对应协议的经验缓冲区
     def record_state_and_action(self, current_protocol, best_protocol, state):
         if args.multi_onehot:
             self.experiences_X[best_protocol].append(self.onehot_state(state, current_protocol))
         else:
             self.experiences_X[best_protocol].append(state)
     
+    # 获取前一个状态数据，处理one-hot编码
     def get_prev_state(self, prev_prev_action, prev_action):
         if args.multi_onehot:
             ret = self.experiences_X[prev_action][len(self.experiences_y[prev_action]) - 1].tolist()
@@ -267,6 +306,7 @@ class MultiRF:
         else:
             return self.experiences_X[prev_action][len(self.experiences_y[prev_action]) - 1].tolist()
     
+    # 训练指定协议的随机森林模型
     def train(self, model_name):
         replay_length = get_replay_buffer_length(self.experiences_y[model_name])
         bootstrapped_idx = np.random.choice(replay_length, replay_length, replace=True)
@@ -308,6 +348,7 @@ class MultiRF:
 
 class SingleRF:
 
+    # 初始化单一随机森林模型，处理所有协议选择
     def __init__(self):
         self.experiences_X = []
         self.experiences_y = []
@@ -322,14 +363,17 @@ class SingleRF:
         if len(self.experiences_y):
             self.train()
 
+    # 记录奖励值到全局经验缓冲区
     def record_reward(self, prev_action, action, reward):
         self.experiences_y.append(reward_engineering(reward))
     
+    # 记录状态和动作对到经验缓冲区
     def record_state_and_action(self, current_protocol, best_protocol, state):
         # get index of best_protocol
         best_protocol_index = protocol_pool.index(best_protocol)
         self.experiences_X.append(self.enumeration_matrix[best_protocol_index, :])
 
+    # 获取前一个状态的特征数据
     def get_prev_state(self, prev_prev_action, prev_action):
         return self.experiences_X[len(self.experiences_y) - 1][:6].tolist()
 
@@ -365,6 +409,7 @@ class SingleRF:
 
 class ADAPT:
 
+    # 初始化ADAPT模型，仅使用请求大小作为特征
     def __init__(self):
         self.experiences_X = []
         self.experiences_y = []
@@ -461,6 +506,7 @@ class ADAPT_PLUS:
 
 class Heuristic:
     # 6 * 6 models and experience buckets: (prev_action, action)
+    # 初始化启发式模型，基于规则进行协议选择
     def __init__(self):
         pass
 
@@ -476,12 +522,14 @@ class Heuristic:
     def train(self, prev_action, action):
         pass
     
+    # 基于提案延迟规则选择协议
     def retrain_and_predict(self, state, prev_action):
         # proposal slowness
         if state[1] > 20:
             return "prime", 0, 0
         return "zyzzyva", 0, 0
 
+# 运行学习代理的主要逻辑，包括模型初始化、学习循环和协议选择
 def run_agent(agent_stub):
     # init 
     actions = []

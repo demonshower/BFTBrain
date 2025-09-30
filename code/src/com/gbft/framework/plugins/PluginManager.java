@@ -1,5 +1,24 @@
 package com.gbft.framework.plugins;
 
+/**
+ * 插件管理器 - BFT协议组件动态管理
+ * 
+ * 功能说明：
+ * 这个类实现了BFT框架的插件系统，支持协议组件的动态加载、注册和获取。
+ * 
+ * 管理的插件类型：
+ * 1. RolePlugin: 节点角色管理插件（主节点、备节点等角色行为）
+ * 2. MessagePlugin: 消息处理插件（检查点、摘要、MAC验证等）
+ * 3. PipelinePlugin: 消息流水线插件（消息处理流程控制）
+ * 4. TransitionPlugin: 状态转换插件（协议状态变迁逻辑）
+ * 
+ * 核心功能：
+ * - 插件注册：将插件实现注册到系统中
+ * - 动态获取：根据配置获取相应的插件实例
+ * - 组合配置：支持多个插件的组合使用
+ * - 自适应选择：根据学习模式自动选择合适的插件
+ */
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

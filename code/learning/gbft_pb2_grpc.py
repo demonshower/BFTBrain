@@ -9,6 +9,7 @@ from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 class EntityCommStub(object):
     """Missing associated documentation comment in .proto file."""
 
+    # 初始化与BFT实体的gRPC客户端连接
     def __init__(self, channel):
         """Constructor.
 
@@ -25,6 +26,7 @@ class EntityCommStub(object):
 class EntityCommServicer(object):
     """Missing associated documentation comment in .proto file."""
 
+    # 接收学习代理发送的协议决策
     def send_decision(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -32,6 +34,7 @@ class EntityCommServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
+# 将EntityComm服务注册到gRPC服务器
 def add_EntityCommServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'send_decision': grpc.unary_unary_rpc_method_handler(
@@ -49,6 +52,7 @@ def add_EntityCommServicer_to_server(servicer, server):
 class EntityComm(object):
     """Missing associated documentation comment in .proto file."""
 
+    # 向BFT实体发送协议选择决策
     @staticmethod
     def send_decision(request,
             target,
@@ -70,6 +74,7 @@ class EntityComm(object):
 class AgentCommStub(object):
     """Missing associated documentation comment in .proto file."""
 
+    # 初始化与学习代理的gRPC客户端连接
     def __init__(self, channel):
         """Constructor.
 
@@ -86,6 +91,7 @@ class AgentCommStub(object):
 class AgentCommServicer(object):
     """Missing associated documentation comment in .proto file."""
 
+    # 接收BFT实体发送的性能特征数据
     def send_data(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -93,6 +99,7 @@ class AgentCommServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
+# 将AgentComm服务注册到gRPC服务器
 def add_AgentCommServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'send_data': grpc.unary_unary_rpc_method_handler(
@@ -110,6 +117,7 @@ def add_AgentCommServicer_to_server(servicer, server):
 class AgentComm(object):
     """Missing associated documentation comment in .proto file."""
 
+    # 向学习代理发送性能特征数据
     @staticmethod
     def send_data(request,
             target,
